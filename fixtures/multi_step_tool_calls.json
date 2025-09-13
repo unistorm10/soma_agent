@@ -1,0 +1,59 @@
+{
+  "messages": [
+    {"role": "user", "content": "Provide today's weather in San Francisco and the forecast for tomorrow."}
+  ],
+  "functions": [
+    {
+      "name": "get_current_weather",
+      "description": "Get the current weather in a given location",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "The city and state, e.g. San Francisco, CA"
+          },
+          "unit": {
+            "type": "string",
+            "enum": ["celsius", "fahrenheit"]
+          }
+        },
+        "required": ["location"]
+      }
+    },
+    {
+      "name": "get_weather_forecast",
+      "description": "Get the weather forecast for a given location",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "The city and state, e.g. San Francisco, CA"
+          },
+          "days": {
+            "type": "integer",
+            "description": "Number of days to forecast"
+          }
+        },
+        "required": ["location", "days"]
+      }
+    }
+  ],
+  "expected_tool_calls": [
+    {
+      "name": "get_current_weather",
+      "arguments": {
+        "location": "San Francisco",
+        "unit": "fahrenheit"
+      }
+    },
+    {
+      "name": "get_weather_forecast",
+      "arguments": {
+        "location": "San Francisco",
+        "days": 2
+      }
+    }
+  ]
+}
