@@ -1,0 +1,9 @@
+{
+  "messages": [
+    {"role": "user", "content": "Think step by step: what is 2 + 2?"}
+  ],
+  "response": {
+    "reasoning_content": "To compute 2 + 2, add the numbers to get 4.",
+    "content": "4"
+  }
+}

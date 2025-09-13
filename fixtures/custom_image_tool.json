@@ -1,0 +1,27 @@
+{
+  "messages": [
+    {"role": "user", "content": "画一只可爱的小腊肠狗"}
+  ],
+  "functions": [
+    {
+      "name": "my_image_gen",
+      "description": "AI painting (image generation) service, input text description, and return the image URL drawn based on text information.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "Detailed description of the desired image content, in English"
+          }
+        },
+        "required": ["prompt"]
+      }
+    }
+  ],
+  "expected_tool_call": {
+    "name": "my_image_gen",
+    "arguments": {
+      "prompt": "A cute dachshund"
+    }
+  }
+}
