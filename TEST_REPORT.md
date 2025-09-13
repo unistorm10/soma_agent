@@ -100,6 +100,20 @@
 ## Logs
 - see `cargo test` output
 - python check for DASHSCOPE_API_KEY: missing
+# TEST REPORT — 2025-09-13
+
+## Suites
+- Unit: pass; 8 tests
+- Integration: pass; 5 tests
+- E2E: n/a
+
+## Coverage
+- not measured
+
+## Logs
+- cargo test (8u,5i)
+- python Qwen-Agent/examples/reasoning_trace.py: file not found
+- DashScope call: 401 InvalidApiKey
 # TEST REPORT — 2025-09-12
 
 ## Suites
