@@ -183,10 +183,11 @@
 
 ## Suites
 - Unit: pass; 9 tests
-- Integration: pass; 5 tests
+- Integration: pass; 7 tests
+- E2E: n/a
 
 ## Coverage
-- n/a
+- not measured
 
 ## Logs
-- cargo test
+- see `cargo test` output

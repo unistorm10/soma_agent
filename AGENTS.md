@@ -30,6 +30,36 @@ Provide a portable Rust agent runtime mirroring Qwen-Agent behaviors.
  - Agent now processes `tool_calls` arrays, running tools in parallel via `tokio::try_join!` and feeding aggregated results back to the provider.
 
 - Agent now supports configurable retry limits and cancellation tokens with exponential backoff for provider and tool calls.
+- Added HTTP backend provider using `HttpConfig { base_url, model, api_key, timeout }` that maps universal tool schemas,
+  `tool_choice`, and reasoning flags to provider-specific fields (`tools`/`functions`, `tool_choice`/`function_call`,
+  `reasoning`/`enable_chain_of_thought`).
+
+## HTTP Backend Usage
+```rust
+use soma_agent::{Ask, backends::http::{HttpConfig, HttpProvider}};
+use serde_json::json;
+use std::time::Duration;
+
+let cfg = HttpConfig {
+    base_url: "https://api.openai.com".into(),
+    model: "gpt-4o".into(),
+    api_key: std::env::var("OPENAI_API_KEY").unwrap(),
+    timeout: Duration::from_secs(30),
+};
+let provider = HttpProvider::new(cfg);
+let ask = Ask {
+    op: "chat".into(),
+    input: json!([{"role": "user", "content": "hi"}]),
+    context: json!({
+        "tools": [{"name": "ping", "description": "", "parameters": {}}],
+        "tool_choice": "auto",
+        "reasoning": true
+    }),
+};
+let reply = provider.ask(ask);
+```
+Set `dialect` to `"dashscope"` in the context to emit DashScope field names
+(`functions`, `function_call`, `enable_chain_of_thought`).
 
 ## Phased Plan
 1) Phase 0 — Spec Freeze & Parity Oracle

@@ -7,4 +7,4 @@ None
 None
 
 ## Notes
-Completed retry and cancellation support.
+Added HTTP backend provider and tests.
