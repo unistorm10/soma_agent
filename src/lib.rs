@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 
+pub mod backends;
+
 /// Ask represents a unit of work sent to a provider.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Ask {

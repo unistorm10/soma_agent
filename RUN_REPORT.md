@@ -508,3 +508,29 @@
 
 ## Next Action
 - None
+# RUN REPORT — 2025-09-14 — OpenAI ChatGPT
+
+## Plan
+- Goal: add HTTP backend provider using /v1/chat/completions.
+- Scope boundaries: backend module, config, integration tests, docs.
+- Assumptions: reqwest and httpmock crates available.
+
+## Commands Run (repro)
+- cargo fmt --all
+- cargo clippy --all-targets --all-features -- -D warnings
+- cargo test
+
+## Results
+- Lint/format: pass
+- Tests: 9 unit, 7 integration passed
+- Perf/bench: n/a
+
+## Decisions & Tradeoffs
+- Used blocking `reqwest` client to fit synchronous `Provider` trait.
+- Dialect handled via `context.dialect`, defaulting to OpenAI.
+
+## Risks / Follow-ups
+- Blocking HTTP client may constrain parallelism; async variant could improve throughput.
+
+## Next Action
+- None

@@ -19,3 +19,4 @@
 - 2025-09-13 — OpenAI ChatGPT — missing reasoning_trace.py and invalid DashScope API key blocked capture; affected: PROGRESS.md, PENDING_TASKS.md, RUN_REPORT.md, TEST_REPORT.md
 - 2025-09-13 — OpenAI ChatGPT — add parallel tool call execution and tests; affected: src/lib.rs, tests/parity_fixture.rs, Cargo.toml, AGENTS.md, PROGRESS.md, RUN_REPORT.md, TEST_REPORT.md, CHANGE_LOG.md
 - 2025-09-14 — OpenAI ChatGPT — add retry and cancellation with exponential backoff; affected: src/lib.rs, tests/parity_fixture.rs, Cargo.toml, AGENTS.md, PROGRESS.md, RUN_REPORT.md, TEST_REPORT.md
+- 2025-09-14 — OpenAI ChatGPT — add HTTP chat completions backend with dialect-aware tool and reasoning mapping; affected: Cargo.toml, src/backends/http.rs, src/backends/mod.rs, src/lib.rs, tests/http_backend.rs, AGENTS.md, PROGRESS.md, RUN_REPORT.md, TEST_REPORT.md
