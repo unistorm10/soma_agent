@@ -7,4 +7,4 @@ None
 None
 
 ## Notes
-Added HTTP backend provider and tests.
+Integrated MCP client and provider with config registration.

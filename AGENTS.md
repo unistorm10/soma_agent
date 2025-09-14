@@ -33,6 +33,8 @@ Provide a portable Rust agent runtime mirroring Qwen-Agent behaviors.
 - Added HTTP backend provider using `HttpConfig { base_url, model, api_key, timeout }` that maps universal tool schemas,
   `tool_choice`, and reasoning flags to provider-specific fields (`tools`/`functions`, `tool_choice`/`function_call`,
   `reasoning`/`enable_chain_of_thought`).
+- Added `mcp_client` crate and `McpProvider` for JSON-RPC servers.
+- `Agent::register_tool` now accepts MCP endpoints or JSON config files via `ToolSpec`.
 
 ## HTTP Backend Usage
 ```rust
@@ -60,6 +62,24 @@ let reply = provider.ask(ask);
 ```
 Set `dialect` to `"dashscope"` in the context to emit DashScope field names
 (`functions`, `function_call`, `enable_chain_of_thought`).
+
+## MCP Server Configuration
+
+Create a JSON file mapping tool names to MCP server URLs:
+
+```json
+{ "ping": "http://localhost:8080/" }
+```
+
+Register tools from the file:
+
+```rust
+use soma_agent::{Agent, ToolSpec};
+use tokio_util::sync::CancellationToken;
+
+let mut agent = Agent::new(provider, 1, 1000, 1, CancellationToken::new());
+agent.register_tool("cfg", ToolSpec::McpConfigFile("tools.json".into())).unwrap();
+```
 
 ## Phased Plan
 1) Phase 0 — Spec Freeze & Parity Oracle
