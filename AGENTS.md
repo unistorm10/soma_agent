@@ -29,6 +29,8 @@ Provide a portable Rust agent runtime mirroring Qwen-Agent behaviors.
 - Introduced tool routing allowing the agent to execute tool calls via registered providers.
  - Agent now processes `tool_calls` arrays, running tools in parallel via `tokio::try_join!` and feeding aggregated results back to the provider.
 
+- Agent now supports configurable retry limits and cancellation tokens with exponential backoff for provider and tool calls.
+
 ## Phased Plan
 1) Phase 0 — Spec Freeze & Parity Oracle
 2) Phase 1 — Agent Core (no I/O)

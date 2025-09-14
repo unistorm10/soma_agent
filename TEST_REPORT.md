@@ -179,3 +179,14 @@
 
 ## Logs
 - see `cargo test` output
+# TEST REPORT — 2025-09-14
+
+## Suites
+- Unit: pass; 9 tests
+- Integration: pass; 5 tests
+
+## Coverage
+- n/a
+
+## Logs
+- cargo test
