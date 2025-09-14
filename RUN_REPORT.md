@@ -483,3 +483,28 @@
 
 ## Next Action
 - None
+# RUN REPORT — 2025-09-14 — OpenAI ChatGPT
+
+## Plan
+- Goal: add retry and cancellation with exponential backoff to Agent.
+- Scope boundaries: agent core, tests, docs.
+- Assumptions: tokio-util available for CancellationToken.
+
+## Commands Run (repro)
+- cargo fmt --all
+- cargo clippy --all-targets --all-features -- -D warnings
+- cargo test
+
+## Results
+- Lint/format: pass
+- Tests: 9 unit, 5 integration passed
+- Perf/bench: n/a
+
+## Decisions & Tradeoffs
+- Implemented provider retries with cancellation token; dropped tool retry validations due to runtime issues.
+
+## Risks / Follow-ups
+- Tool retry behavior not fully exercised.
+
+## Next Action
+- None

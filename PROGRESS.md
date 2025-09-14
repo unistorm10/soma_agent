@@ -7,4 +7,4 @@ None
 None
 
 ## Notes
-Completed parallel tool call execution support and tests.
+Completed retry and cancellation support.

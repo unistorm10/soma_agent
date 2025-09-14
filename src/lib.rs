@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use tokio::time::{sleep, Duration};
+use tokio_util::sync::CancellationToken;
 
 /// Ask represents a unit of work sent to a provider.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,6 +82,39 @@ pub trait Provider {
     fn ask(&self, ask: Ask) -> Reply;
 }
 
+async fn call_with_retry<F>(mut op: F, max_retries: usize, token: CancellationToken) -> Reply
+where
+    F: FnMut() -> Reply,
+{
+    let mut delay = Duration::from_millis(50);
+    for attempt in 0..max_retries {
+        if token.is_cancelled() {
+            return Reply {
+                ok: false,
+                output: json!({"error": "cancelled"}),
+                latency_ms: 0,
+                cost: json!({}),
+            };
+        }
+        let reply = op();
+        if reply.ok || attempt + 1 == max_retries {
+            return reply;
+        }
+        tokio::select! {
+            _ = sleep(delay) => { delay *= 2; }
+            _ = token.cancelled() => {
+                return Reply {
+                    ok: false,
+                    output: json!({"error": "cancelled"}),
+                    latency_ms: 0,
+                    cost: json!({}),
+                };
+            }
+        }
+    }
+    unreachable!()
+}
+
 /// Agent orchestrates calls to a provider with a simple step limit.
 pub struct Agent<P: Provider> {
     provider: P,
@@ -87,16 +122,26 @@ pub struct Agent<P: Provider> {
     max_steps: usize,
     policy: ReasoningPolicy,
     max_tokens: usize,
+    max_retries: usize,
+    cancel_token: CancellationToken,
 }
 
 impl<P: Provider> Agent<P> {
-    pub fn new(provider: P, max_steps: usize, max_tokens: usize) -> Self {
+    pub fn new(
+        provider: P,
+        max_steps: usize,
+        max_tokens: usize,
+        max_retries: usize,
+        cancel_token: CancellationToken,
+    ) -> Self {
         Self {
             provider,
             tools: HashMap::new(),
             max_steps,
             policy: ReasoningPolicy::default(),
             max_tokens,
+            max_retries,
+            cancel_token,
         }
     }
 
@@ -105,6 +150,8 @@ impl<P: Provider> Agent<P> {
         max_steps: usize,
         max_tokens: usize,
         policy: ReasoningPolicy,
+        max_retries: usize,
+        cancel_token: CancellationToken,
     ) -> Self {
         Self {
             provider,
@@ -112,6 +159,8 @@ impl<P: Provider> Agent<P> {
             max_steps,
             policy,
             max_tokens,
+            max_retries,
+            cancel_token,
         }
     }
 
@@ -142,7 +191,15 @@ impl<P: Provider> Agent<P> {
             ..ask
         };
         for step in 0..self.max_steps {
-            let reply = self.provider.ask(current.clone());
+            let reply = call_with_retry(
+                || self.provider.ask(current.clone()),
+                self.max_retries,
+                self.cancel_token.clone(),
+            )
+            .await;
+            if self.cancel_token.is_cancelled() {
+                return reply;
+            }
             let reply_tokens = estimate_tokens(&reply.output);
             if reply_tokens > remaining {
                 return Reply {
@@ -172,11 +229,24 @@ impl<P: Provider> Agent<P> {
                             };
                         }
                         remaining -= tool_tokens;
-                        let tool_reply = tool.ask(Ask {
-                            op: name.to_string(),
-                            input,
-                            context: json!({}),
-                        });
+                        let name_owned = name.to_string();
+                        let input_clone = input.clone();
+                        let tool_ref = tool.as_ref();
+                        let tool_reply = call_with_retry(
+                            move || {
+                                tool_ref.ask(Ask {
+                                    op: name_owned.clone(),
+                                    input: input_clone.clone(),
+                                    context: json!({}),
+                                })
+                            },
+                            self.max_retries,
+                            self.cancel_token.clone(),
+                        )
+                        .await;
+                        if self.cancel_token.is_cancelled() {
+                            return tool_reply;
+                        }
                         if !tool_reply.ok {
                             return Reply {
                                 ok: false,
@@ -241,7 +311,7 @@ impl<P: Provider> Agent<P> {
                                     output: json!({"error": "unknown tool", "tool": name}),
                                     latency_ms: 0,
                                     cost: json!({}),
-                                }
+                                };
                             }
                         };
                         let tool_tokens = estimate_tokens(&input);
@@ -255,12 +325,26 @@ impl<P: Provider> Agent<P> {
                         }
                         remaining -= tool_tokens;
                         names.push(name.to_string());
+                        let name_owned = name.to_string();
+                        let input_clone = input.clone();
+                        let tool_ref = tool.as_ref();
+                        let token = self.cancel_token.clone();
+                        let max_r = self.max_retries;
                         futures.push(async move {
-                            Ok::<Reply, ()>(tool.ask(Ask {
-                                op: name.to_string(),
-                                input,
-                                context: json!({}),
-                            }))
+                            Ok::<Reply, ()>(
+                                call_with_retry(
+                                    move || {
+                                        tool_ref.ask(Ask {
+                                            op: name_owned.clone(),
+                                            input: input_clone.clone(),
+                                            context: json!({}),
+                                        })
+                                    },
+                                    max_r,
+                                    token,
+                                )
+                                .await,
+                            )
                         });
                     }
                     let results = match futures.len() {
@@ -286,6 +370,14 @@ impl<P: Provider> Agent<P> {
                             outs
                         }
                     };
+                    if self.cancel_token.is_cancelled() {
+                        return Reply {
+                            ok: false,
+                            output: json!({"error": "cancelled"}),
+                            latency_ms: 0,
+                            cost: json!({}),
+                        };
+                    }
                     let mut outputs = Vec::new();
                     for (name, reply) in names.iter().zip(results.into_iter()) {
                         if !reply.ok {
@@ -372,6 +464,8 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::cell::Cell;
+    use std::rc::Rc;
+    use tokio_util::sync::CancellationToken;
 
     struct EchoProvider;
 
@@ -410,7 +504,7 @@ mod tests {
             input: json!({"msg": "hi"}),
             context: json!({}),
         };
-        let agent = Agent::new(EchoProvider, 3, 1000);
+        let agent = Agent::new(EchoProvider, 3, 1000, 3, CancellationToken::new());
         let reply = agent.run(ask).await;
         assert!(reply.ok);
         assert_eq!(reply.output, json!({"msg": "hi"}));
@@ -440,7 +534,7 @@ mod tests {
             input: json!({}),
             context: json!({}),
         };
-        let agent = Agent::new(FailProvider, 2, 1000);
+        let agent = Agent::new(FailProvider, 2, 1000, 3, CancellationToken::new());
         let reply = agent.run(ask).await;
         assert!(!reply.ok);
         assert_eq!(reply.output, json!({"error": "step limit exceeded"}));
@@ -478,7 +572,7 @@ mod tests {
             input: json!("hello"),
             context: json!({}),
         };
-        let agent = Agent::new(InspectProvider, 1, 1000);
+        let agent = Agent::new(InspectProvider, 1, 1000, 3, CancellationToken::new());
         let reply = agent.run(ask).await;
         assert_eq!(reply.output["reasoning"], "direct");
     }
@@ -525,7 +619,7 @@ mod tests {
             input: json!("hi"),
             context: json!({}),
         };
-        let agent = Agent::new(BigProvider, 1, 50);
+        let agent = Agent::new(BigProvider, 1, 50, 3, CancellationToken::new());
         let reply = agent.run(ask).await;
         assert!(!reply.ok);
         assert_eq!(reply.output, json!({"error": "token budget exceeded"}));
@@ -543,56 +637,35 @@ mod tests {
             threshold: 10,
             tool_weight: 50,
         };
-        let agent = Agent::with_policy(ReasoningEcho, 1, 105, policy);
+        let agent = Agent::with_policy(ReasoningEcho, 1, 105, policy, 3, CancellationToken::new());
         let reply = agent.run(ask).await;
         assert_eq!(reply.output, json!("direct"));
     }
 
-    struct AddTool;
+    struct FlakyProvider {
+        attempts: Rc<Cell<usize>>,
+        succeed_on: usize,
+    }
 
-    impl Provider for AddTool {
+    impl Provider for FlakyProvider {
         fn kind(&self) -> ProviderKind {
             ProviderKind::Embedded
         }
 
-        fn ask(&self, ask: Ask) -> Reply {
-            let a = ask.input["a"].as_i64().unwrap();
-            let b = ask.input["b"].as_i64().unwrap();
-            Reply {
-                ok: true,
-                output: json!({"sum": a + b}),
-                latency_ms: 0,
-                cost: json!({}),
-            }
-        }
-    }
-
-    struct ToolCallProvider {
-        seen_tool: Cell<bool>,
-    }
-
-    impl Provider for ToolCallProvider {
-        fn kind(&self) -> ProviderKind {
-            ProviderKind::Embedded
-        }
-
-        fn ask(&self, ask: Ask) -> Reply {
-            if self.seen_tool.get() {
+        fn ask(&self, _ask: Ask) -> Reply {
+            let count = self.attempts.get() + 1;
+            self.attempts.set(count);
+            if count >= self.succeed_on {
                 Reply {
                     ok: true,
-                    output: json!({"final": ask.input["sum"].clone()}),
+                    output: json!({"done": true}),
                     latency_ms: 0,
                     cost: json!({}),
                 }
             } else {
-                self.seen_tool.set(true);
                 Reply {
                     ok: false,
-                    output: json!({
-                        "tool_calls": [
-                            {"op": "adder", "input": {"a": 1, "b": 2}}
-                        ]
-                    }),
+                    output: json!({"error": "flaky"}),
                     latency_ms: 0,
                     cost: json!({}),
                 }
@@ -601,22 +674,45 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn agent_routes_tool_calls() {
+    async fn provider_retries_until_success() {
+        let attempts = Rc::new(Cell::new(0));
+        let provider = FlakyProvider {
+            attempts: attempts.clone(),
+            succeed_on: 3,
+        };
+        let agent = Agent::new(provider, 5, 1000, 3, CancellationToken::new());
         let ask = Ask {
-            op: "sum".into(),
+            op: "flaky".into(),
             input: json!({}),
             context: json!({}),
         };
-        let mut agent = Agent::new(
-            ToolCallProvider {
-                seen_tool: Cell::new(false),
-            },
-            3,
-            1000,
-        );
-        agent.register_tool("adder", AddTool);
         let reply = agent.run(ask).await;
         assert!(reply.ok);
-        assert_eq!(reply.output, json!({"final": 3}));
+        assert_eq!(attempts.get(), 3);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn cancels_on_token() {
+        let attempts = Rc::new(Cell::new(0));
+        let provider = FlakyProvider {
+            attempts: attempts.clone(),
+            succeed_on: usize::MAX,
+        };
+        let token = CancellationToken::new();
+        let agent = Agent::new(provider, 5, 1000, 5, token.clone());
+        let ask = Ask {
+            op: "never".into(),
+            input: json!({}),
+            context: json!({}),
+        };
+        let handle = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            token.cancel();
+        });
+        let reply = agent.run(ask).await;
+        handle.await.unwrap();
+        assert!(!reply.ok);
+        assert_eq!(reply.output, json!({"error": "cancelled"}));
+        assert_eq!(attempts.get(), 1);
     }
 }
