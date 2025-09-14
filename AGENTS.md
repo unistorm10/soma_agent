@@ -27,6 +27,7 @@ Provide a portable Rust agent runtime mirroring Qwen-Agent behaviors.
 - Embedded `ReasoningPolicy` heuristics selecting direct vs reasoned mode and injecting mode into request context.
 - Added token budget guardrails that cap total tokens and downgrade reasoning near the limit.
 - Introduced tool routing allowing the agent to execute tool calls via registered providers.
+ - Agent now processes `tool_calls` arrays, running tools in parallel via `tokio::try_join!` and feeding aggregated results back to the provider.
 
 ## Phased Plan
 1) Phase 0 — Spec Freeze & Parity Oracle
