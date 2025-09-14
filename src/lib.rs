@@ -1,10 +1,13 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 
 pub mod backends;
+pub mod mcp;
 
 /// Ask represents a unit of work sent to a provider.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,6 +85,30 @@ impl ReasoningPolicy {
 pub trait Provider {
     fn kind(&self) -> ProviderKind;
     fn ask(&self, ask: Ask) -> Reply;
+}
+
+pub enum ToolSpec {
+    Provider(Box<dyn Provider>),
+    McpEndpoint(String),
+    McpConfigFile(PathBuf),
+}
+
+impl<T: Provider + 'static> From<T> for ToolSpec {
+    fn from(p: T) -> Self {
+        ToolSpec::Provider(Box::new(p))
+    }
+}
+
+impl From<String> for ToolSpec {
+    fn from(url: String) -> Self {
+        ToolSpec::McpEndpoint(url)
+    }
+}
+
+impl From<PathBuf> for ToolSpec {
+    fn from(p: PathBuf) -> Self {
+        ToolSpec::McpConfigFile(p)
+    }
 }
 
 async fn call_with_retry<F>(mut op: F, max_retries: usize, token: CancellationToken) -> Reply
@@ -166,8 +193,42 @@ impl<P: Provider> Agent<P> {
         }
     }
 
-    pub fn register_tool<T: Provider + 'static>(&mut self, name: impl Into<String>, tool: T) {
-        self.tools.insert(name.into(), Box::new(tool));
+    pub fn register_tool<S, T>(
+        &mut self,
+        name: S,
+        spec: T,
+    ) -> Result<(), Box<dyn std::error::Error>>
+    where
+        S: Into<String>,
+        T: Into<ToolSpec>,
+    {
+        let name = name.into();
+        match spec.into() {
+            ToolSpec::Provider(p) => {
+                self.tools.insert(name, p);
+            }
+            ToolSpec::McpEndpoint(url) => {
+                let provider = crate::mcp::McpProvider::new(url)?;
+                self.tools.insert(name, Box::new(provider));
+            }
+            ToolSpec::McpConfigFile(path) => {
+                let text = fs::read_to_string(path)?;
+                let map: HashMap<String, String> = serde_json::from_str(&text)?;
+                for (tool_name, url) in map {
+                    let provider = crate::mcp::McpProvider::new(url)?;
+                    self.tools.insert(tool_name, Box::new(provider));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn has_tool(&self, name: &str) -> bool {
+        self.tools.contains_key(name)
+    }
+
+    pub fn call_tool(&self, name: &str, ask: Ask) -> Option<Reply> {
+        self.tools.get(name).map(|p| p.ask(ask))
     }
 
     /// Runs the agent until the provider returns `ok` or the step or token limit is hit.

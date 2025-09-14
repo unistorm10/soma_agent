@@ -1137,6 +1137,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcp_client"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "memchr"
 version = "2.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1726,6 +1736,7 @@ name = "soma_agent"
 version = "0.1.0"
 dependencies = [
  "httpmock",
+ "mcp_client",
  "reqwest",
  "serde",
  "serde_json",

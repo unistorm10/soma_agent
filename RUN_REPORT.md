@@ -314,6 +314,33 @@
 
 ## Next Action
 - None
+
+# RUN REPORT — 2025-09-14 — OpenAI ChatGPT
+
+## Plan
+- Goal: add MCP client and provider, allow Agent to register MCP tools from config, and document usage.
+- Scope boundaries: new `mcp_client` crate, `McpProvider`, Agent registration, tests, docs.
+- Assumptions: JSON-RPC over HTTP; blocking reqwest acceptable.
+
+## Commands Run (repro)
+- cargo fmt --all
+- cargo clippy --all-targets --all-features -- -D warnings
+- cargo test
+
+## Results
+- Lint/format: pass
+- Tests: 9 unit, 8 integration passed
+- Perf/bench: n/a
+
+## Decisions & Tradeoffs
+- Blocking JSON-RPC client favors simplicity over async performance.
+
+## Risks / Follow-ups
+- MCP client lacks auth and streaming; future work may add both.
+
+## Next Action
+- None
+
 # RUN REPORT — 2025-09-13 — OpenAI ChatGPT
 
 ## Plan
