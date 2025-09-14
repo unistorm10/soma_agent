@@ -291,6 +291,32 @@
 # RUN REPORT — 2025-09-13 — OpenAI ChatGPT
 
 ## Plan
+- Goal: add parallel `tool_calls` execution to agent and cover with tests.
+- Scope boundaries: agent core, parity tests, docs.
+- Assumptions: tokio runtime available.
+
+## Commands Run (repro)
+- cargo fmt --all
+- cargo clippy --all-targets --all-features -- -D warnings
+- cargo test
+
+## Results
+- Lint/format: pass
+- Tests: 8 unit, 7 integration passed
+- Perf/bench: n/a
+
+## Decisions & Tradeoffs
+- Adopted async `Agent::run` using `tokio::try_join!` for up to three parallel calls, falling back to sequential awaits beyond that.
+- Retained synchronous `Provider` trait to minimize churn.
+
+## Risks / Follow-ups
+- True concurrency depends on async-aware providers; current tests use synchronous tools.
+
+## Next Action
+- None
+# RUN REPORT — 2025-09-13 — OpenAI ChatGPT
+
+## Plan
 - Goal: attempt to capture reasoning trace from Qwen-Agent example using DashScope.
 - Scope boundaries: run `examples/reasoning_trace.py`, make direct DashScope call, update docs.
 - Assumptions: reasoning_trace example exists and DashScope API key is valid.
@@ -431,3 +457,29 @@
 
 ## Next Action
 - Obtain DashScope API key and rerun reasoning example to replace synthetic fixture.
+# RUN REPORT — 2025-09-13 — OpenAI ChatGPT
+
+## Plan
+- Goal: add parallel `tool_calls` execution to agent and cover with tests.
+- Scope boundaries: agent core, parity tests, docs.
+- Assumptions: tokio runtime available.
+
+## Commands Run (repro)
+- cargo fmt --all
+- cargo clippy --all-targets --all-features -- -D warnings
+- cargo test
+
+## Results
+- Lint/format: pass
+- Tests: 8 unit, 7 integration passed
+- Perf/bench: n/a
+
+## Decisions & Tradeoffs
+- Adopted async `Agent::run` using `tokio::try_join!` for up to three parallel calls, falling back to sequential awaits beyond that.
+- Retained synchronous `Provider` trait to minimize churn.
+
+## Risks / Follow-ups
+- True concurrency depends on async-aware providers; current tests use synchronous tools.
+
+## Next Action
+- None

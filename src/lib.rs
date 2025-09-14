@@ -120,7 +120,7 @@ impl<P: Provider> Agent<P> {
     }
 
     /// Runs the agent until the provider returns `ok` or the step or token limit is hit.
-    pub fn run(&self, ask: Ask) -> Reply {
+    pub async fn run(&self, ask: Ask) -> Reply {
         let mut remaining = self.max_tokens;
         let ask_tokens = estimate_tokens(&ask.input) + estimate_tokens(&ask.context);
         if ask_tokens > remaining {
@@ -156,53 +156,168 @@ impl<P: Provider> Agent<P> {
             if reply.ok {
                 return reply;
             }
-            if let Some(tool_call) = reply.output.get("tool") {
-                let name = tool_call["op"].as_str().unwrap_or("");
-                let input = tool_call["input"].clone();
-                if let Some(tool) = self.tools.get(name) {
-                    let tool_tokens = estimate_tokens(&input);
-                    if tool_tokens > remaining {
-                        return Reply {
-                            ok: false,
-                            output: json!({"error": "token budget exceeded"}),
-                            latency_ms: 0,
-                            cost: json!({}),
-                        };
-                    }
-                    remaining -= tool_tokens;
-                    let tool_reply = tool.ask(Ask {
-                        op: name.to_string(),
-                        input,
-                        context: json!({}),
-                    });
-                    if !tool_reply.ok {
-                        return Reply {
-                            ok: false,
-                            output: json!({
-                                "error": "tool invocation failed",
+            if let Some(tool_calls) = reply.output.get("tool_calls").and_then(|v| v.as_array()) {
+                if tool_calls.len() == 1 {
+                    let tc = &tool_calls[0];
+                    let name = tc["op"].as_str().unwrap_or("");
+                    let input = tc["input"].clone();
+                    if let Some(tool) = self.tools.get(name) {
+                        let tool_tokens = estimate_tokens(&input);
+                        if tool_tokens > remaining {
+                            return Reply {
+                                ok: false,
+                                output: json!({"error": "token budget exceeded"}),
+                                latency_ms: 0,
+                                cost: json!({}),
+                            };
+                        }
+                        remaining -= tool_tokens;
+                        let tool_reply = tool.ask(Ask {
+                            op: name.to_string(),
+                            input,
+                            context: json!({}),
+                        });
+                        if !tool_reply.ok {
+                            return Reply {
+                                ok: false,
+                                output: json!({
+                                    "error": "tool invocation failed",
+                                    "tool": name,
+                                    "detail": tool_reply.output,
+                                }),
+                                latency_ms: tool_reply.latency_ms,
+                                cost: tool_reply.cost,
+                            };
+                        }
+                        let tool_reply_tokens = estimate_tokens(&tool_reply.output);
+                        if tool_reply_tokens > remaining {
+                            return Reply {
+                                ok: false,
+                                output: json!({"error": "token budget exceeded"}),
+                                latency_ms: 0,
+                                cost: json!({}),
+                            };
+                        }
+                        remaining -= tool_reply_tokens;
+                        current = Ask {
+                            op: current.op.clone(),
+                            input: tool_reply.output,
+                            context: json!({
+                                "reasoning": mode.as_str(),
                                 "tool": name,
-                                "detail": tool_reply.output,
                             }),
-                            latency_ms: tool_reply.latency_ms,
-                            cost: tool_reply.cost,
                         };
-                    }
-                    let tool_reply_tokens = estimate_tokens(&tool_reply.output);
-                    if tool_reply_tokens > remaining {
+                        let next_tokens =
+                            estimate_tokens(&current.input) + estimate_tokens(&current.context);
+                        if next_tokens > remaining {
+                            return Reply {
+                                ok: false,
+                                output: json!({"error": "token budget exceeded"}),
+                                latency_ms: 0,
+                                cost: json!({}),
+                            };
+                        }
+                        remaining -= next_tokens;
+                        continue;
+                    } else {
                         return Reply {
                             ok: false,
-                            output: json!({"error": "token budget exceeded"}),
+                            output: json!({"error": "unknown tool", "tool": name}),
                             latency_ms: 0,
                             cost: json!({}),
                         };
                     }
-                    remaining -= tool_reply_tokens;
+                } else if !tool_calls.is_empty() {
+                    let mut names = Vec::new();
+                    let mut futures = Vec::new();
+                    for tc in tool_calls {
+                        let name = tc["op"].as_str().unwrap_or("");
+                        let input = tc["input"].clone();
+                        let tool = match self.tools.get(name) {
+                            Some(t) => t,
+                            None => {
+                                return Reply {
+                                    ok: false,
+                                    output: json!({"error": "unknown tool", "tool": name}),
+                                    latency_ms: 0,
+                                    cost: json!({}),
+                                }
+                            }
+                        };
+                        let tool_tokens = estimate_tokens(&input);
+                        if tool_tokens > remaining {
+                            return Reply {
+                                ok: false,
+                                output: json!({"error": "token budget exceeded"}),
+                                latency_ms: 0,
+                                cost: json!({}),
+                            };
+                        }
+                        remaining -= tool_tokens;
+                        names.push(name.to_string());
+                        futures.push(async move {
+                            Ok::<Reply, ()>(tool.ask(Ask {
+                                op: name.to_string(),
+                                input,
+                                context: json!({}),
+                            }))
+                        });
+                    }
+                    let results = match futures.len() {
+                        2 => {
+                            let (r1, r2) =
+                                tokio::try_join!(futures.remove(0), futures.remove(0)).unwrap();
+                            vec![r1, r2]
+                        }
+                        3 => {
+                            let (r1, r2, r3) = tokio::try_join!(
+                                futures.remove(0),
+                                futures.remove(0),
+                                futures.remove(0)
+                            )
+                            .unwrap();
+                            vec![r1, r2, r3]
+                        }
+                        _ => {
+                            let mut outs = Vec::new();
+                            for f in futures {
+                                outs.push(f.await.unwrap());
+                            }
+                            outs
+                        }
+                    };
+                    let mut outputs = Vec::new();
+                    for (name, reply) in names.iter().zip(results.into_iter()) {
+                        if !reply.ok {
+                            return Reply {
+                                ok: false,
+                                output: json!({
+                                    "error": "tool invocation failed",
+                                    "tool": name,
+                                    "detail": reply.output,
+                                }),
+                                latency_ms: reply.latency_ms,
+                                cost: reply.cost,
+                            };
+                        }
+                        let tool_reply_tokens = estimate_tokens(&reply.output);
+                        if tool_reply_tokens > remaining {
+                            return Reply {
+                                ok: false,
+                                output: json!({"error": "token budget exceeded"}),
+                                latency_ms: 0,
+                                cost: json!({}),
+                            };
+                        }
+                        remaining -= tool_reply_tokens;
+                        outputs.push(reply.output);
+                    }
                     current = Ask {
                         op: current.op.clone(),
-                        input: tool_reply.output,
+                        input: Value::Array(outputs),
                         context: json!({
                             "reasoning": mode.as_str(),
-                            "tool": name,
+                            "tools": names,
                         }),
                     };
                     let next_tokens =
@@ -217,13 +332,6 @@ impl<P: Provider> Agent<P> {
                     }
                     remaining -= next_tokens;
                     continue;
-                } else {
-                    return Reply {
-                        ok: false,
-                        output: json!({"error": "unknown tool", "tool": name}),
-                        latency_ms: 0,
-                        cost: json!({}),
-                    };
                 }
             }
             // propagate failure output into the next ask context
@@ -295,15 +403,15 @@ mod tests {
         assert_eq!(reply.output, json!({"msg": "hi"}));
     }
 
-    #[test]
-    fn agent_runs_until_ok() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn agent_runs_until_ok() {
         let ask = Ask {
             op: "echo".into(),
             input: json!({"msg": "hi"}),
             context: json!({}),
         };
         let agent = Agent::new(EchoProvider, 3, 1000);
-        let reply = agent.run(ask);
+        let reply = agent.run(ask).await;
         assert!(reply.ok);
         assert_eq!(reply.output, json!({"msg": "hi"}));
     }
@@ -325,15 +433,15 @@ mod tests {
         }
     }
 
-    #[test]
-    fn agent_respects_step_limit() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn agent_respects_step_limit() {
         let ask = Ask {
             op: "fail".into(),
             input: json!({}),
             context: json!({}),
         };
         let agent = Agent::new(FailProvider, 2, 1000);
-        let reply = agent.run(ask);
+        let reply = agent.run(ask).await;
         assert!(!reply.ok);
         assert_eq!(reply.output, json!({"error": "step limit exceeded"}));
     }
@@ -363,15 +471,15 @@ mod tests {
         }
     }
 
-    #[test]
-    fn agent_attaches_reasoning_mode() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn agent_attaches_reasoning_mode() {
         let ask = Ask {
             op: "inspect".into(),
             input: json!("hello"),
             context: json!({}),
         };
         let agent = Agent::new(InspectProvider, 1, 1000);
-        let reply = agent.run(ask);
+        let reply = agent.run(ask).await;
         assert_eq!(reply.output["reasoning"], "direct");
     }
 
@@ -410,21 +518,21 @@ mod tests {
         }
     }
 
-    #[test]
-    fn agent_enforces_token_budget() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn agent_enforces_token_budget() {
         let ask = Ask {
             op: "big".into(),
             input: json!("hi"),
             context: json!({}),
         };
         let agent = Agent::new(BigProvider, 1, 50);
-        let reply = agent.run(ask);
+        let reply = agent.run(ask).await;
         assert!(!reply.ok);
         assert_eq!(reply.output, json!({"error": "token budget exceeded"}));
     }
 
-    #[test]
-    fn budget_forces_direct_mode() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn budget_forces_direct_mode() {
         let long = "x".repeat(90);
         let ask = Ask {
             op: "inspect".into(),
@@ -436,7 +544,7 @@ mod tests {
             tool_weight: 50,
         };
         let agent = Agent::with_policy(ReasoningEcho, 1, 105, policy);
-        let reply = agent.run(ask);
+        let reply = agent.run(ask).await;
         assert_eq!(reply.output, json!("direct"));
     }
 
@@ -481,10 +589,9 @@ mod tests {
                 Reply {
                     ok: false,
                     output: json!({
-                        "tool": {
-                            "op": "adder",
-                            "input": {"a": 1, "b": 2},
-                        }
+                        "tool_calls": [
+                            {"op": "adder", "input": {"a": 1, "b": 2}}
+                        ]
                     }),
                     latency_ms: 0,
                     cost: json!({}),
@@ -493,8 +600,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn agent_routes_tool_calls() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn agent_routes_tool_calls() {
         let ask = Ask {
             op: "sum".into(),
             input: json!({}),
@@ -508,7 +615,7 @@ mod tests {
             1000,
         );
         agent.register_tool("adder", AddTool);
-        let reply = agent.run(ask);
+        let reply = agent.run(ask).await;
         assert!(reply.ok);
         assert_eq!(reply.output, json!({"final": 3}));
     }
