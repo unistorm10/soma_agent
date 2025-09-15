@@ -203,3 +203,15 @@
 
 ## Logs
 - see `cargo test` output
+# TEST REPORT — 2025-09-14
+
+## Suites
+- Unit: pass; 9 tests
+- Integration: pass; 12 tests
+- E2E: n/a
+
+## Coverage
+- not measured
+
+## Logs
+- see `cargo test --features sandboxed_exec` output

@@ -21,3 +21,4 @@
 - 2025-09-14 — OpenAI ChatGPT — add retry and cancellation with exponential backoff; affected: src/lib.rs, tests/parity_fixture.rs, Cargo.toml, AGENTS.md, PROGRESS.md, RUN_REPORT.md, TEST_REPORT.md
 - 2025-09-14 — OpenAI ChatGPT — add HTTP chat completions backend with dialect-aware tool and reasoning mapping; affected: Cargo.toml, src/backends/http.rs, src/backends/mod.rs, src/lib.rs, tests/http_backend.rs, AGENTS.md, PROGRESS.md, RUN_REPORT.md, TEST_REPORT.md
 - 2025-09-14 — OpenAI ChatGPT — add MCP client crate, provider, config registration, and docs; affected: mcp_client/**, src/mcp/mod.rs, src/lib.rs, tests/mcp_integration.rs, AGENTS.md, PROGRESS.md, RUN_REPORT.md, TEST_REPORT.md, Cargo.toml
+- 2025-09-14 — OpenAI ChatGPT — add sandboxed WASM execution tool and tests; affected: Cargo.toml, src/tools/wasm.rs, src/tools/mod.rs, src/lib.rs, tests/wasm_tool.rs, AGENTS.md

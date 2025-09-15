@@ -8,6 +8,8 @@ use tokio_util::sync::CancellationToken;
 
 pub mod backends;
 pub mod mcp;
+#[cfg(feature = "sandboxed_exec")]
+pub mod tools;
 
 /// Ask represents a unit of work sent to a provider.
 #[derive(Debug, Clone, Serialize, Deserialize)]
