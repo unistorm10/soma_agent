@@ -7,4 +7,4 @@ None
 None
 
 ## Notes
-Integrated MCP client and provider with config registration.
+Added sandboxed WASM execution tool behind `sandboxed_exec` feature.

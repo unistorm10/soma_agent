@@ -18,6 +18,12 @@ Provide a portable Rust agent runtime mirroring Qwen-Agent behaviors.
 - Providers communicate using `Ask` and `Reply` structs.
 - Provider deployment form is captured by `ProviderKind`.
 
+## Sandboxed Execution Security Model
+- `sandboxed_exec` feature runs WebAssembly modules via wasmtime.
+- CPU is limited with wasmtime fuel; memory with `StoreLimits`.
+- Calls run in a separate thread with a wall-clock timeout.
+- WASI context is constructed without preopened directories so host filesystem access is disabled by default.
+
 ## Interfaces Changed
 - Introduced universal provider API with `Ask`, `Reply`, `ProviderKind`, and a `Provider` trait.
 - Added parity fixtures under `fixtures/` including single, parallel, and multi-step tool calls.

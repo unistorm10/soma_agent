@@ -561,3 +561,29 @@
 
 ## Next Action
 - None
+# RUN REPORT — 2025-09-14 — OpenAI ChatGPT
+
+## Plan
+- Goal: introduce `sandboxed_exec` feature with WASM tool and security docs.
+- Scope boundaries: Cargo feature flag, WasmTool using wasmtime, tests, AGENTS.md update.
+- Assumptions: wasmtime crates available; tests run offline.
+
+## Commands Run (repro)
+- cargo fmt --all
+- cargo clippy --all-targets --features sandboxed_exec -- -D warnings
+- cargo test --features sandboxed_exec
+
+## Results
+- Lint/format: pass
+- Tests: 9 unit, 12 integration passed
+- Perf/bench: n/a
+
+## Decisions & Tradeoffs
+- Stored `StoreLimits` inside custom context to satisfy wasmtime API.
+- Used thread + channel for wall-clock timeout; fuel for CPU control.
+
+## Risks / Follow-ups
+- Wasmtime dependency increases build time; future optimization may be required.
+
+## Next Action
+- None
